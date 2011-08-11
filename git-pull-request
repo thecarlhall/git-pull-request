@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 
 """git pull-request
 
@@ -46,10 +46,11 @@ import re
 
 def main():
     repo, remote = '', None
+    build = False
 
     # parse command line options
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "hr:", ["help","repo:"])
+        opts, args = getopt.getopt(sys.argv[1:], "hr:b", ["help","repo:","build"])
     except getopt.error, msg:
         print msg
         print "for help use --help"
@@ -59,11 +60,14 @@ def main():
         if o in ("-h", "--help"):
             print __doc__
             sys.exit(0)
-        if o in ("-r", "--repo"):
+        elif o in ("-r", "--repo"):
             if re.search('/', a):
               repo = a
-            else:  
+            else:
               remote = a
+        elif o in ('-b', '--build'):
+            build = True
+
 
     if remote is None and repo == '':
         remote = 'origin'
@@ -91,6 +95,8 @@ def main():
     # process arguments
     if len(args):
         ret = fetch(repo, args[0])
+        if (build):
+            mvn_build()
     else:
         ret = show(repo)
 
@@ -175,6 +181,11 @@ def fetch(repo, pullreq):
     print
     print color_text("done. examine changes and merge into master if good",'green');
 
+    return 0
+
+
+def mvn_build():
+    ret = os.system('mvn clean install -q')
     return 0
 
 
