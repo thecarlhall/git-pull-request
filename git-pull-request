@@ -43,6 +43,7 @@ import json
 import urllib2
 import os
 import re
+import pipes
 
 def main():
     repo, remote = '', None
@@ -78,9 +79,11 @@ def main():
 
     # get repo name from origin
     if(repo == '' or remote != None):
-        origin = os.popen('git remote -v').read()
-        m = re.search("^%s.*?github\.com.*?[:/]([^/]+/[^/]+)\.git\s*\(fetch\)$" % remote, origin,re.MULTILINE)
-        if(m != None and m.group(1) != ''):
+        escaped = pipes.quote(remote)
+        origin = os.popen("git config remote.%s.url" % escaped).read()
+        origin = re.sub("(\.git)?\s*$", "", origin)
+        m = re.search(r"\bgithub\.com[:/]([^/]+/[^/]+)$", origin)
+        if(m != None):
             repo = m.group(1)
 
     if(repo == ''):
@@ -105,14 +108,9 @@ def main():
 """Nicely display info about a given pull request
 """
 def display(pr):
-    if(pr['mergeable']):
-        conflict = ''
-    else:
-        conflict = color_text('*HAS CONFLICTS!*','red',True)
-
-    print "%s - %s %s" % (color_text('REQUEST %s' % pr.get('number'),'green'),pr.get('title'),conflict)
+    print "%s - %s" % (color_text('REQUEST %s' % pr.get('number'),'green'),pr.get('title'))
     print "    %s" % (color_text(pr['head']['label'],'yellow'))
-    print "    by %s (%s)" % (pr['user'].get('name'),pr['user'].get('login'))
+    print "    by %s %s" % (pr['user'].get('login'), color_text(pr.get('created_at')[:10],'red'))
     print "    %s" % (color_text(pr.get('html_url'),'blue'))
     print
 
@@ -124,7 +122,7 @@ def show(repo):
 
     print "loading open pull requests for %s..." % (repo)
     print
-    url = "http://github.com/api/v2/json/pulls/%s/open" % (repo)
+    url = "https://api.github.com/repos/%s/pulls" % (repo)
     req = urllib2.Request(url)
     try:
       response = urllib2.urlopen(req)
@@ -140,7 +138,7 @@ def show(repo):
     data = json.loads(data)
     #print json.dumps(data,sort_keys=True, indent=4)
 
-    for pr in data['pulls']:
+    for pr in data:
         display(pr)
     return 0
 
@@ -149,7 +147,7 @@ def fetch(repo, pullreq):
 
     print "loading pull request info for request %s..." % (pullreq)
     print
-    url = "http://github.com/api/v2/json/pulls/%s/%s" % (repo, pullreq)
+    url = "https://api.github.com/repos/%s/pulls/%s" % (repo, pullreq)
     req = urllib2.Request(url)
     response = urllib2.urlopen(req)
     data = response.read()
@@ -158,10 +156,14 @@ def fetch(repo, pullreq):
         return 3
 
     data = json.loads(data)
-    pr = data['pull']
+    pr = data
+    if pr['head']['repo'] == None:
+      print("remote repository for this pull request "
+            "does not exist anymore.")
+      return 6
     display(pr)
 
-    local  = 'pull-request-%s' % (pullreq)
+    local  = pipes.quote('pull-request-%s' % (pullreq))
     branch = os.popen("git branch|grep '^*'|awk '{print $2}'").read().strip();
     if(branch != pr['base']['ref'] and branch != local):
         print color_text("The pull request is based on branch '%s' but you're on '%s' currently" % \
@@ -174,9 +176,11 @@ def fetch(repo, pullreq):
         print "Failed to create/switch branch"
         return 5
 
-    print "pulling from %s (%s)" % (pr['head']['repository']['url'], pr['head']['ref']);
+    print "pulling from %s (%s)" % (pr['head']['repo']['git_url'], pr['head']['ref']);
 
-    ret = os.system('git pull %s %s' % (pr['head']['repository']['url'], pr['head']['ref']));
+    git_url = pipes.quote(pr['head']['repo']['git_url'])
+    ref = pipes.quote(pr['head']['ref'])
+    ret = os.system('git pull %s %s' % (git_url, ref));
 
     print
     print color_text("done. examine changes and merge into master if good",'green');
